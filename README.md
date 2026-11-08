@@ -12,7 +12,7 @@ Hidki runs through the body, jumps over junk food and pills, and catches viruses
 
 ## What's in the game
 
-- **Hidki** is drawn in code. His arms and legs spin as he runs, his flagellum tail waves, and his body squashes and stretches on jumps. His eyes and smile always stay the same.
+- **Hidki** is drawn in code from the family's sketch (`assets/hidki-drawing.webp`): a small round body with six bulb-tipped lobes and a dark-ink outline. The two bottom lobes are legs and the two side lobes are arms, and all four spin as he runs. The two top lobes wiggle, and he squashes and stretches on jumps. His dot eyes and V smile always stay the same.
 - **Obstacles:** sugar cubes (stacks of 1–3, sometimes two wide), lollipops, soda cans, donuts and antibiotic capsules
 - **Viruses** come in lines, arcs and singles, and sometimes sit above an obstacle as a reward for jumping. Each one is worth 10 points. Catching several in a row raises the pitch of the sound. Golden viruses are worth 50.
 - **Yogurt** (probiotic) gives a bubble shield that knocks away the next obstacle
@@ -30,5 +30,6 @@ Open `index.html` in a browser. No build step and no dependencies (fonts load fr
 - `index.html`: the stage, HUD and menus
 - `css/style.css`: the page and menu styles
 - `js/game.js`: the whole game (physics, spawning, drawing, sound)
+- `assets/hidki-drawing.webp`: the original drawing of Hidki
 
-To swap in a picture of Hidki later, replace the body in `drawHidki()` in `js/game.js` and keep the limbs and face code.
+Hidki's shape is defined in `hidkiLobes()` in `js/game.js` (one entry per lobe: position, angle, length). His face is drawn in `drawFace()`.

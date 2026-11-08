@@ -8,9 +8,10 @@
   const H = 540;               // world height
   const GROUND = 452;          // y of the ground surface
   const HX = 170;              // Hidki's x position
-  const BODY_RX = 36, BODY_RY = 30;
-  const LEG = 20;
-  const REST_Y = GROUND - LEG - BODY_RY + 8; // body centre while standing
+  const BODY_R = 21;           // Hidki's round middle
+  const LEG = 33;              // leg lobe length (hip to tip centre)
+  const FOOT_OFFSET = 9 + LEG + 13 + 3.5; // body centre to the bottom of a straight-down leg
+  const REST_Y = GROUND - FOOT_OFFSET + 3;  // body centre while standing
   const GRAV = 2700;
   const JUMP_V = 960;
   const DJUMP_V = 820;
@@ -508,34 +509,37 @@
   }
 
   // ---------- Render: Hidki ----------
+  // Drawn from the family's sketch (assets/hidki-drawing.webp): a small round body with six
+  // bulb-tipped lobes. The two bottom lobes are legs and the two side lobes are arms; all four
+  // spin while he runs. The two top lobes only wiggle. Eyes and smile never change.
   const C = {
-    body1: '#c6f68a', body2: '#5bcf55', body3: '#2f9b3c', outline: '#1d6f33',
-    limb: '#2f9b3c', limbBack: '#237d34', shoe: '#ff5d73', shoeBack: '#d93a55', sole: '#ffffff',
+    ink: '#1f2a5c',            // the pen outline from the drawing
+    fill1: '#e6ffb0', fill2: '#8fe070', fill3: '#45b85a',
+    blush: 'rgba(255,120,150,0.5)',
   };
+  const LOBE_NECK = 12, LOBE_TIP = 13, OUTLINE = 3.5;
 
-  function drawLimb(px, py, ang, len, color, end, shoe) {
-    const ex = px + Math.sin(ang) * len, ey = py + Math.cos(ang) * len;
-    ctx.strokeStyle = color; ctx.lineWidth = 7; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(ex, ey); ctx.stroke();
-    if (end === 'foot') {
-      ctx.save(); ctx.translate(ex, ey); ctx.rotate(-ang * 0.25);
-      ctx.fillStyle = shoe; ctx.beginPath(); ctx.ellipse(4, 1, 9, 5.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = C.sole; ctx.fillRect(-4, 4, 16, 2.5);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(ex, ey, 5.5, 0, Math.PI * 2); ctx.fill();
-    }
+  function hidkiLobes(a, t) {
+    const wig = Math.sin(t * 5) * 0.09;
+    return [
+      { px: 2, py: -8, ang: Math.PI - 0.15 + wig, len: 33 },           // top lobe
+      { px: -4, py: -6, ang: Math.PI + 1.0 - wig, len: 31 },          // upper-left lobe
+      { px: -6, py: 2, ang: -a * 1.1 - Math.PI / 2, len: 31 },          // back arm
+      { px: 6, py: 2, ang: -a * 1.1 + Math.PI / 2, len: 33 },           // front arm
+      { px: -7, py: 9, ang: a + Math.PI, len: LEG },                    // back leg
+      { px: 7, py: 9, ang: a, len: LEG },                               // front leg
+    ];
   }
 
-  function bodyPath(t) {
-    ctx.beginPath();
-    for (let i = 0; i <= 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
-      const w = 1 + 0.025 * Math.sin(a * 3 + t * 5) + 0.015 * Math.sin(a * 5 - t * 3);
-      const x = Math.cos(a) * BODY_RX * w, y = Math.sin(a) * BODY_RY * w;
-      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  function drawSilhouette(lobes, pad, style) {
+    ctx.strokeStyle = style; ctx.fillStyle = style; ctx.lineCap = 'round';
+    ctx.lineWidth = LOBE_NECK + pad * 2;
+    for (const l of lobes) {
+      const ex = l.px + Math.sin(l.ang) * l.len, ey = l.py + Math.cos(l.ang) * l.len;
+      ctx.beginPath(); ctx.moveTo(l.px * 0.3, l.py * 0.3); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ex, ey, LOBE_TIP + pad, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.closePath();
+    ctx.beginPath(); ctx.arc(0, 0, BODY_R + pad, 0, Math.PI * 2); ctx.fill();
   }
 
   function drawHidki() {
@@ -550,54 +554,27 @@
     ctx.translate(x, y);
     if (h.invuln > 0 && Math.floor(h.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.4;
 
-    // flagellum tail
-    ctx.strokeStyle = C.body3; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (let i = 0; i <= 16; i++) {
-      const px = -BODY_RX + 2 - i * 3.2;
-      const py = 4 + Math.sin(i * 0.7 - t * 14) * (2 + i * 0.5);
-      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-    }
-    ctx.stroke();
-
-    // back limbs
-    drawLimb(-8, 20, a + Math.PI, LEG, C.limbBack, 'foot', C.shoeBack);
-    drawLimb(-24, 4, -a * 1.1 + Math.PI, 17, C.limbBack, 'hand');
-
-    // body (squash & stretch around the feet)
+    // squash & stretch the silhouette around the feet; the face is drawn afterwards, unscaled
     ctx.save();
-    ctx.translate(0, BODY_RY);
+    ctx.translate(0, FOOT_OFFSET);
     ctx.scale(h.sx, h.sy);
-    ctx.translate(0, -BODY_RY);
-    const g = ctx.createRadialGradient(-12, -14, 4, 0, 0, BODY_RX + 6);
-    g.addColorStop(0, C.body1); g.addColorStop(0.55, C.body2); g.addColorStop(1, C.body3);
-    // little hairs (pili)
-    ctx.strokeStyle = C.body3; ctx.lineWidth = 2;
-    for (let i = 0; i < 13; i++) {
-      const ang = Math.PI + (i / 12) * Math.PI;
-      const wv = Math.sin(t * 6 + i) * 0.08;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(ang) * BODY_RX * 0.96, Math.sin(ang) * BODY_RY * 0.96);
-      ctx.lineTo(Math.cos(ang + wv) * (BODY_RX + 7), Math.sin(ang + wv) * (BODY_RY + 7));
-      ctx.stroke();
+    ctx.translate(0, -FOOT_OFFSET);
+    const lobes = hidkiLobes(a, t);
+    drawSilhouette(lobes, OUTLINE, C.ink);                 // ink outline pass
+    const g = ctx.createRadialGradient(-10, -14, 4, 0, 0, 58);
+    g.addColorStop(0, C.fill1); g.addColorStop(0.45, C.fill2); g.addColorStop(1, C.fill3);
+    drawSilhouette(lobes, 0, g);                           // fill pass merges into one shape
+    // shine on the body and each lobe tip
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath(); ctx.ellipse(-9, -12, 8, 4.5, -0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    for (const l of lobes) {
+      const ex = l.px + Math.sin(l.ang) * l.len, ey = l.py + Math.cos(l.ang) * l.len;
+      ctx.beginPath(); ctx.arc(ex - 4, ey - 4, 3.2, 0, Math.PI * 2); ctx.fill();
     }
-    bodyPath(t);
-    ctx.fillStyle = g; ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = C.outline; ctx.stroke();
-    // spots and shine
-    ctx.fillStyle = 'rgba(255,255,255,0.28)';
-    [[-20, 8, 4], [-12, 16, 2.8], [-24, -4, 2.4], [4, 18, 2.2]].forEach(([sx, sy, r]) => { ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill(); });
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.beginPath(); ctx.ellipse(-14, -16, 10, 5, -0.5, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
 
-    // front limbs
-    drawLimb(8, 20, a, LEG, C.limb, 'foot', C.shoe);
-    drawLimb(26, 6, -a * 1.1, 17, C.limb, 'hand');
-
-    // face — always the same, never squashed or rotated
     drawFace();
-
     ctx.restore();
 
     // shield bubble
@@ -605,8 +582,8 @@
       const blink = h.shield < 1.5 && Math.floor(h.shield * 8) % 2 === 0;
       if (!blink) {
         ctx.save();
-        ctx.translate(x, y + 2);
-        const r = 54 + Math.sin(t * 6) * 2;
+        ctx.translate(x, y + 4);
+        const r = 64 + Math.sin(t * 6) * 2;
         const sg = ctx.createRadialGradient(-14, -18, 6, 0, 0, r);
         sg.addColorStop(0, 'rgba(255,255,255,0.15)'); sg.addColorStop(0.8, 'rgba(160,220,255,0.18)'); sg.addColorStop(1, 'rgba(120,200,255,0.45)');
         ctx.fillStyle = sg;
@@ -619,27 +596,20 @@
   }
 
   function drawFace() {
-    // eyes
-    for (const [ex, ey] of [[6, -8], [24, -7]]) {
+    // two small dot eyes, close together, as in the drawing
+    for (const ex of [-3, 9]) {
+      ctx.fillStyle = C.ink;
+      ctx.beginPath(); ctx.ellipse(ex, -5, 3.4, 4.2, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.ellipse(ex, ey, 8, 9.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = C.outline; ctx.lineWidth = 2; ctx.stroke();
-      ctx.fillStyle = '#17302e';
-      ctx.beginPath(); ctx.arc(ex + 2.2, ey + 1, 4.6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(ex + 3.8, ey - 1.2, 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + 1.1, -6.4, 1.2, 0, Math.PI * 2); ctx.fill();
     }
     // cheeks
-    ctx.fillStyle = 'rgba(255,111,150,0.45)';
-    ctx.beginPath(); ctx.ellipse(-3, 7, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(31, 7, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
-    // smile
-    ctx.fillStyle = '#7a1f2e';
-    ctx.beginPath(); ctx.moveTo(6, 6); ctx.quadraticCurveTo(15, 22, 26, 6); ctx.quadraticCurveTo(15, 11, 6, 6); ctx.fill();
-    ctx.fillStyle = '#ff8fa3';
-    ctx.beginPath(); ctx.ellipse(16, 13, 4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = C.outline; ctx.lineWidth = 2; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(6, 6); ctx.quadraticCurveTo(15, 22, 26, 6); ctx.stroke();
+    ctx.fillStyle = C.blush;
+    ctx.beginPath(); ctx.ellipse(-10, 5, 4.5, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(16, 5, 4.5, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+    // the V smile
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2.8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(-1, 4); ctx.lineTo(3.5, 10); ctx.lineTo(9.5, 3); ctx.stroke();
   }
 
   // ---------- Render: obstacles ----------
