@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>המירוץ של חידקי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Varela+Round&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="stage" id="stage">
+  <canvas id="game" aria-label="המירוץ של חידקי"></canvas>
+
+  <div class="hud" id="hud" hidden>
+    <div class="hud-stats">
+      <div class="hearts" id="hearts" aria-label="לבבות"></div>
+      <div class="chip"><span class="chip-num" id="meters">0</span><span class="chip-unit">מ׳</span></div>
+      <div class="chip chip-virus"><span class="virus-dot" aria-hidden="true"></span><span class="chip-num" id="viruses">0</span></div>
+    </div>
+    <div class="hud-buttons">
+      <button class="icon-btn" id="pauseBtn" type="button" aria-label="הפסקה">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+      </button>
+      <button class="icon-btn" id="muteBtn" type="button" aria-label="השתקה">
+        <svg class="snd-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="snd-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <section class="panel" id="titleScreen">
+    <p class="eyebrow">משחק ריצה וקפיצות</p>
+    <h1>המירוץ של חידקי</h1>
+    <p class="lead">חידקי הוא חיידק טוב שגר בבטן. עזרו לו לרוץ, לקפוץ מעל ממתקים ותרופות, ולתפוס כמה שיותר וירוסים בדרך.</p>
+    <ul class="keys">
+      <li><b>קפיצה</b> רווח, חץ למעלה או נגיעה במסך</li>
+      <li><b>קפיצה גבוהה</b> להחזיק לחוץ</li>
+      <li><b>קפיצה כפולה</b> ללחוץ שוב באוויר</li>
+      <li><b>יוגורט</b> מגן בועה לכמה שניות</li>
+    </ul>
+    <button class="btn" id="startBtn" type="button">יוצאים לדרך!</button>
+    <p class="best" id="bestTitle"></p>
+  </section>
+
+  <section class="panel" id="overScreen" hidden>
+    <p class="eyebrow">סוף הריצה</p>
+    <h2 id="overTitle">אוי, חידקי נתקע!</h2>
+    <dl class="stats">
+      <div><dt>מטרים</dt><dd id="sMeters">0</dd></div>
+      <div><dt>וירוסים</dt><dd id="sViruses">0</dd></div>
+      <div class="total"><dt>ניקוד</dt><dd id="sScore">0</dd></div>
+    </dl>
+    <p class="best" id="bestOver"></p>
+    <button class="btn" id="againBtn" type="button">עוד ריצה</button>
+  </section>
+
+  <section class="panel panel-small" id="pauseScreen" hidden>
+    <h2>הפסקה</h2>
+    <button class="btn" id="resumeBtn" type="button">ממשיכים</button>
+  </section>
+</main>
+<p class="foot">רווח / חץ למעלה / נגיעה = קפיצה · P = הפסקה<span class="rotate-hint"> · כדאי לסובב את הטלפון לרוחב</span></p>
+<script src="js/game.js"></script>
+</body>
+</html>
