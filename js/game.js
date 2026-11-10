@@ -9,8 +9,8 @@
   const GROUND = 452;          // y of the ground surface
   const HX = 170;              // Hidki's x position
   const BODY_R = 21;           // Hidki's round middle
-  const LEG = 33;              // leg lobe length (hip to tip centre)
-  const FOOT_OFFSET = 9 + LEG + 13 + 3.5; // body centre to the bottom of a straight-down leg
+  const LEG = 42;              // longest lobe (centre to tip centre)
+  const FOOT_OFFSET = LEG + 12.5 + 3.5; // body centre to the bottom of a straight-down leg
   const REST_Y = GROUND - FOOT_OFFSET + 3;  // body centre while standing
   const GRAV = 2700;
   const JUMP_V = 960;
@@ -334,7 +334,7 @@
     h.buffer = Math.max(0, h.buffer - dt);
     h.sx += (1 - h.sx) * Math.min(1, dt * 10);
     h.sy += (1 - h.sy) * Math.min(1, dt * 10);
-    h.limb += dt * (runSpeed / 22) * (h.onGround ? 1 : 1.5);
+    h.limb += dt * (runSpeed / 46) * (h.onGround ? 1 : 1.8); // rolls with the ground
     h.invuln = Math.max(0, h.invuln - dt);
     h.shield = Math.max(0, h.shield - dt);
     if (playing && h.onGround && Math.random() < dt * 9) particles.push({ x: HX - 10, y: GROUND - 3, vx: -runSpeed * 0.3, vy: rand(-40, -10), life: 0.4, max: 0.4, col: 'rgba(255,255,255,0.8)', r: rand(2, 4) });
@@ -510,25 +510,27 @@
 
   // ---------- Render: Hidki ----------
   // Drawn from the family's sketch (assets/hidki-drawing.webp): a small round body with six
-  // bulb-tipped lobes. The two bottom lobes are legs and the two side lobes are arms; all four
-  // spin while he runs. The two top lobes only wiggle. Eyes and smile never change.
+  // bulb-tipped lobes. All six lobes turn together as he runs, like a rolling star.
+  // Eyes and smile never move or turn.
   const C = {
     ink: '#1f2a5c',            // the pen outline from the drawing
     fill1: '#e6ffb0', fill2: '#8fe070', fill3: '#45b85a',
     blush: 'rgba(255,120,150,0.5)',
   };
-  const LOBE_NECK = 12, LOBE_TIP = 13, OUTLINE = 3.5;
+  const LOBE_NECK = 11, LOBE_TIP = 12.5, OUTLINE = 3.5;
 
-  function hidkiLobes(a, t) {
-    const wig = Math.sin(t * 5) * 0.09;
-    return [
-      { px: 2, py: -8, ang: Math.PI - 0.15 + wig, len: 33 },           // top lobe
-      { px: -4, py: -6, ang: Math.PI + 1.0 - wig, len: 31 },          // upper-left lobe
-      { px: -6, py: 2, ang: -a * 1.1 - Math.PI / 2, len: 31 },          // back arm
-      { px: 6, py: 2, ang: -a * 1.1 + Math.PI / 2, len: 33 },           // front arm
-      { px: -7, py: 9, ang: a + Math.PI, len: LEG },                    // back leg
-      { px: 7, py: 9, ang: a, len: LEG },                               // front leg
-    ];
+  // Lobe directions measured from the drawing, in degrees clockwise from straight up.
+  const LOBE_DIRS = [10, 80, 150, 200, 260, 310];
+  const LOBE_LENS = [42, 42, 40, 40, 40, 40];
+  function hidkiLobes(a) {
+    // The whole star of lobes turns clockwise (rolling forward); the face does not.
+    return LOBE_DIRS.map((d, i) => ({ px: 0, py: 0, ang: Math.PI - (d * Math.PI) / 180 - a, len: LOBE_LENS[i] }));
+  }
+  // How far below the body centre the lowest lobe reaches right now.
+  function lobesBottom(lobes) {
+    let m = 0;
+    for (const l of lobes) m = Math.max(m, Math.cos(l.ang) * l.len);
+    return m + LOBE_TIP + OUTLINE;
   }
 
   function drawSilhouette(lobes, pad, style) {
@@ -544,7 +546,9 @@
 
   function drawHidki() {
     const h = hero;
-    const x = HX, y = h.y, t = h.t, a = h.limb;
+    const lobes = hidkiLobes(h.limb);
+    // keep the lowest lobe on the ground while rolling (the body bobs a little)
+    const x = HX, y = h.y + (FOOT_OFFSET - lobesBottom(lobes)), t = h.t;
     // ground shadow
     const lift = clamp((REST_Y - y) / 220, 0, 1);
     ctx.fillStyle = 'rgba(23,48,46,0.18)';
@@ -559,7 +563,6 @@
     ctx.translate(0, FOOT_OFFSET);
     ctx.scale(h.sx, h.sy);
     ctx.translate(0, -FOOT_OFFSET);
-    const lobes = hidkiLobes(a, t);
     drawSilhouette(lobes, OUTLINE, C.ink);                 // ink outline pass
     const g = ctx.createRadialGradient(-10, -14, 4, 0, 0, 58);
     g.addColorStop(0, C.fill1); g.addColorStop(0.45, C.fill2); g.addColorStop(1, C.fill3);
