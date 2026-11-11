@@ -14,9 +14,12 @@ Hidki runs through the body, jumps over junk food and pills, and catches viruses
 
 - **Hidki** is drawn in code from the family's sketch (`assets/hidki-drawing.webp`): a small round body with six bulb-tipped lobes and a dark-ink outline. All six lobes spin together as he runs, so he rolls along like a star, bobbing so the lowest lobe always touches the ground. He spins faster in the air and squashes and stretches on jumps. His dot eyes and V smile always stay the same.
 - **Obstacles:** sugar cubes (stacks of 1–3, sometimes two wide), lollipops, soda cans, donuts and antibiotic capsules
-- **Viruses** come in lines, arcs and singles, and sometimes sit above an obstacle as a reward for jumping. Each one is worth 10 points. Catching several in a row raises the pitch of the sound. Golden viruses are worth 50.
+- **Viruses** (smiling, friendly-looking) come in lines, arcs and singles, and sometimes sit above an obstacle as a reward for jumping. Each one is worth 10 points. Catching several in a row raises the pitch of the sound. Golden viruses are worth 50.
 - **Yogurt** (probiotic) gives a bubble shield that knocks away the next obstacle
-- **Peanut with a rocket** makes Hidki fly for 7 seconds. Hold the key or finger to climb and let go to glide down, with a fuel bar above him. While he flies, the world speeds up, obstacles bounce off him, and viruses come in wavy trails across the sky. When the fuel runs out he floats down with one air jump left, and the ground ahead is clear. The first prize in a run is always the rocket peanut; after that it alternates with yogurt.
+- **Peanut with a rocket** makes Hidki fly for 7 seconds. Hold the key or finger to climb and let go to glide down, with a fuel bar above him. While he flies, the world speeds up, obstacles bounce off him, and viruses come in wavy trails across the sky. When the fuel runs out he floats down with one air jump left, and the ground ahead is clear. 
+- **Magic cape** turns the world into outer space for 10 seconds: a starry sky with a ringed planet, purple hills and a cratered moon floor. Hidki wears a flowing purple cape with stars and holds a magic wand. Jumps are floaty (moon gravity), the wand shoots a beam that turns obstacles ahead into stars, and nearby viruses are pulled toward him. The world fades back when the magic ends.
+- Prizes come in a fixed order: rocket peanut, magic cape, yogurt, then again.
+- **The viruses smile.** They have happy eyes, pink cheeks and an open smile.
 - **3 hearts.** After a hit Hidki blinks and can't be hurt for a moment.
 - **Zones** change every 500 m (הקיבה → המעי הדק → המעי הגס → מסלול הכוכבים), and the colours fade from one zone to the next
 - Speed increases gradually. Score = meters + 10 × viruses. The best score is saved in the browser.

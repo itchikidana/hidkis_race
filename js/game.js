@@ -22,6 +22,10 @@
   const FLY_TIME = 7;          // seconds of rocket-peanut flight
   const FLY_TOP = 110;         // highest Hidki can fly (body centre)
   const FLY_BOOST = 1.35;      // the world speeds up while the rocket burns
+  const MAGIC_TIME = 10;       // seconds of cape magic (space world)
+  const MOON_GRAV = 0.62;      // gravity multiplier in space: floaty jumps
+  const ZAP_RANGE = 280;       // the wand turns obstacles this close into stars
+  const MAGNET_RANGE = 300;    // and pulls in viruses this close
   const PX_PER_METER = 40;
   const ZONE_METERS = 500;
 
@@ -117,6 +121,8 @@
     gold: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.14, 'triangle', 0.12, null, i * 0.06)),
     hit: () => { tone(240, 0.35, 'sawtooth', 0.09, 70); tone(120, 0.3, 'square', 0.05, 60); },
     rocket: () => { tone(160, 0.6, 'sawtooth', 0.07, 900); tone(320, 0.5, 'square', 0.04, 1400, 0.05); [784, 988, 1319].forEach((f, i) => tone(f, 0.14, 'triangle', 0.09, null, 0.25 + i * 0.07)); },
+    magic: () => [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.3, 'sine', 0.08, null, i * 0.07)),
+    zap: () => { tone(1400, 0.18, 'triangle', 0.07, 2600); tone(2100, 0.12, 'sine', 0.05, null, 0.05); },
     land: () => tone(500, 0.25, 'triangle', 0.08, 200),
     shield: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sine', 0.1, null, i * 0.05)),
     zone: () => [659, 784, 988].forEach((f, i) => tone(f, 0.18, 'triangle', 0.09, null, i * 0.09)),
@@ -128,17 +134,19 @@
   // ---------- State ----------
   let state = 'title';      // title | play | paused | over
   let best = store.get('hidki.best', 0);
-  let hero, obstacles, viruses, powerups, particles, texts;
+  let hero, obstacles, viruses, powerups, particles, texts, beams;
+  let magicMix = 0;          // 0 = normal world, 1 = space world (fades between)
   let speed, elapsed, dist, scroll, caught, hearts, combo, comboTimer;
   let obstGap, virusGap, powerGap, powerCount, shake, zoneIdx, banner, overTimer;
 
   // Scenery that exists in every state
   const cells = Array.from({ length: 7 }, (_, i) => ({ x: i * 260 + rand(0, 120), y: rand(60, 280), r: rand(40, 95), ph: rand(0, 6) }));
+  const stars = Array.from({ length: 90 }, () => ({ x: rand(0, 2000), y: rand(0, GROUND - 40), r: rand(0.6, 2.2), ph: rand(0, 6), p: rand(0.03, 0.12) }));
   const bubbles = Array.from({ length: 22 }, () => ({ x: rand(0, 1600), y: rand(0, H), r: rand(3, 10), s: rand(12, 40) }));
 
   function reset() {
-    hero = { y: REST_Y, vy: 0, onGround: true, jumps: 0, holding: false, buffer: 0, limb: 0, sx: 1, sy: 1, invuln: 0, shield: 0, fly: 0, boost: 1, t: 0 };
-    obstacles = []; viruses = []; powerups = []; particles = []; texts = [];
+    hero = { y: REST_Y, vy: 0, onGround: true, jumps: 0, holding: false, buffer: 0, limb: 0, sx: 1, sy: 1, invuln: 0, shield: 0, fly: 0, magic: 0, boost: 1, t: 0 };
+    obstacles = []; viruses = []; powerups = []; particles = []; texts = []; beams = [];
     speed = START_SPEED; elapsed = 0; dist = 0; caught = 0; hearts = MAX_HEARTS;
     combo = 0; comboTimer = 0; shake = 0; zoneIdx = 0; banner = null; overTimer = 0;
     obstGap = 700; virusGap = 380; powerGap = START_SPEED * 14; powerCount = 0;
@@ -295,7 +303,7 @@
     }
   }
   function spawnPower() {
-    const type = powerCount++ % 2 === 0 ? 'rocket' : 'yogurt';
+    const type = ['rocket', 'cape', 'yogurt'][powerCount++ % 3];
     powerups.push({ x: W + 60, y: rand(250, 320), ph: 0, type });
   }
 
@@ -355,8 +363,9 @@
         burst(HX - 60, h.y + 10, 14, ['#cfcfcf', '#ffffff', '#ffd34d'], 180, 0.5, 4);
       }
     } else if (!h.onGround) {
-      h.vy += GRAV * dt * (h.vy > 0 ? 1.15 : 1);
+      h.vy += GRAV * (h.magic > 0 ? MOON_GRAV : 1) * dt * (h.vy > 0 ? 1.15 : 1);
       h.y += h.vy * dt;
+      if (h.y < 70) { h.y = 70; h.vy = Math.max(h.vy, 0); }
       if (h.y >= REST_Y) {
         h.y = REST_Y;
         if (h.vy > 300) { h.sx = 1.18; h.sy = 0.84; burst(HX, GROUND - 2, 7, ['#ffffff', '#fff3d6'], 150, 0.35, 3.5); }
@@ -371,6 +380,11 @@
     h.invuln = Math.max(0, h.invuln - dt);
     h.shield = Math.max(0, h.shield - dt);
     if (h.fly === 0) h.boost += (1 - h.boost) * Math.min(1, dt * 2);
+    if (h.magic > 0 && playing) {
+      h.magic = Math.max(0, h.magic - dt);
+      if (h.magic === 0) { showBanner('חוזרים הביתה'); sfx.land(); }
+    }
+    magicMix += ((h.magic > 0 ? 1 : 0) - magicMix) * Math.min(1, dt * 2.5);
     if (playing && h.onGround && h.fly === 0 && Math.random() < dt * 9) particles.push({ x: HX - 10, y: GROUND - 3, vx: -runSpeed * 0.3, vy: rand(-40, -10), life: 0.4, max: 0.4, col: 'rgba(255,255,255,0.8)', r: rand(2, 4) });
 
     // spawning
@@ -389,7 +403,10 @@
     for (const o of obstacles) o.x -= move;
     for (const v of viruses) { v.x -= move; v.ph += dt * 3; v.rot += dt * 1.4; v.y = v.baseY + Math.sin(v.ph) * 7; }
     for (const p of powerups) { p.x -= move; p.ph += dt * 3; }
-    obstacles = obstacles.filter((o) => o.x + o.w > -60);
+    for (const o of obstacles) if (o.zap !== undefined) o.zap += dt;
+    obstacles = obstacles.filter((o) => o.x + o.w > -60 && !(o.zap > 0.35));
+    for (const b of beams) b.life -= dt;
+    beams = beams.filter((b) => b.life > 0);
     viruses = viruses.filter((v) => v.x > -40 && !v.dead);
     powerups = powerups.filter((p) => p.x > -40 && !p.dead);
 
@@ -421,12 +438,33 @@
             floatText(p.x, p.y - 30, 'טיל בוטן!', '#d9701f');
             burst(p.x, p.y, 22, ['#ffd34d', '#ff9f43', '#e2b26b', '#ffffff'], 280, 0.6, 4);
             obstGap = Math.max(obstGap, speed * 1.4); // a clear landing strip after the flight
+          } else if (p.type === 'cape') {
+            h.magic = MAGIC_TIME; sfx.magic(); showBanner('קסם בחלל!');
+            floatText(p.x, p.y - 30, 'גלימת קסמים!', '#7b4dff');
+            burst(p.x, p.y, 26, ['#7b4dff', '#ffd34d', '#ffffff', '#ff8fc0'], 300, 0.7, 4);
           } else {
             h.shield = 7; sfx.shield();
             floatText(p.x, p.y - 26, 'מגן יוגורט!', '#e2457a');
             burst(p.x, p.y, 18, ['#ffffff', '#ffd1e3', '#bfe9ff'], 240, 0.6, 4);
           }
         }
+      }
+      // cape magic: the wand turns nearby obstacles into stars and pulls in viruses
+      if (h.magic > 0) {
+        const wx = HX + 58, wy = h.y - 36;
+        for (const o of obstacles) {
+          if (o.hit || o.zap !== undefined || o.x > HX + ZAP_RANGE || o.x + o.w < HX - 10) continue;
+          o.zap = 0; o.hit = true; sfx.zap();
+          const cx = o.x + o.w / 2, cy = GROUND - o.h / 2;
+          beams.push({ x1: wx, y1: wy, x2: cx, y2: cy, life: 0.25 });
+          burst(cx, cy, 18, ['#ffd34d', '#ffffff', '#c9b6ff', '#8fd8ff'], 260, 0.7, 4);
+          floatText(cx, cy - o.h / 2 - 20, 'פוף!', '#7b4dff');
+        }
+        for (const v of viruses) {
+          const dx = HX - v.x, dy = h.y - v.baseY, d = Math.hypot(dx, dy);
+          if (d < MAGNET_RANGE && v.x > HX - 40) { const k = Math.min(1, (520 * dt) / d); v.x += dx * k; v.baseY += dy * k; }
+        }
+        if (Math.random() < dt * 25) particles.push({ x: wx + rand(-6, 6), y: wy + rand(-6, 6), vx: rand(-120, -40), vy: rand(-60, 60), life: 0.5, max: 0.5, col: pick(['#ffd34d', '#ffffff', '#c9b6ff']), r: rand(1.5, 3.5), nograv: true });
       }
       // obstacles
       for (const o of obstacles) {
@@ -606,6 +644,8 @@
       ctx.restore();
     }
 
+    if (h.magic > 0) drawCape(x, y, t, h.magic);
+
     ctx.save();
     ctx.translate(x, y);
     if (h.invuln > 0 && Math.floor(h.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.4;
@@ -631,6 +671,7 @@
 
     drawFace();
     ctx.restore();
+    if (h.magic > 0) drawWand(x, y, t, h.magic);
 
     // rocket fuel gauge above Hidki
     if (h.fly > 0) {
@@ -679,7 +720,8 @@
   function drawObstacle(o) {
     const top = GROUND - o.h;
     ctx.save();
-    if (o.flyY !== undefined) { ctx.translate(o.x + o.w / 2, top + o.h / 2 + o.flyY); ctx.rotate(o.spin); ctx.translate(-(o.x + o.w / 2), -(top + o.h / 2)); }
+    if (o.zap !== undefined) { const k = Math.max(0.01, 1 - o.zap / 0.35); const cx = o.x + o.w / 2, cy = top + o.h / 2; ctx.translate(cx, cy); ctx.rotate(o.zap * 10); ctx.scale(k, k); ctx.translate(-cx, -cy); }
+    else if (o.flyY !== undefined) { ctx.translate(o.x + o.w / 2, top + o.h / 2 + o.flyY); ctx.rotate(o.spin); ctx.translate(-(o.x + o.w / 2), -(top + o.h / 2)); }
     else {
       ctx.fillStyle = 'rgba(23,48,46,0.16)';
       ctx.beginPath(); ctx.ellipse(o.x + o.w / 2, GROUND + 3, o.w / 2 + 6, 6, 0, 0, Math.PI * 2); ctx.fill();
@@ -772,14 +814,17 @@
     ctx.fillStyle = skin.body; ctx.beginPath(); ctx.arc(0, 0, v.r, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = skin.ring; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(-5, -6, 5, 0, Math.PI * 2); ctx.fill();
-    // grumpy face (looking at Hidki on the left)
+    // smiling face (looking at Hidki on the left)
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(-6, -1, 4.2, 0, Math.PI * 2); ctx.arc(5, -1, 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-6, -2, 4.4, 0, Math.PI * 2); ctx.arc(5, -2, 4.4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#17302e';
-    ctx.beginPath(); ctx.arc(-7.5, 0, 2.2, 0, Math.PI * 2); ctx.arc(3.5, 0, 2.2, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#17302e'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-11, -7); ctx.lineTo(-3, -5); ctx.moveTo(10, -7); ctx.lineTo(2, -5); ctx.stroke();
-    ctx.beginPath(); ctx.arc(-1, 9, 4, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-7.2, -1.6, 2.4, 0, Math.PI * 2); ctx.arc(3.8, -1.6, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(-6.4, -2.6, 0.9, 0, Math.PI * 2); ctx.arc(4.6, -2.6, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,170,200,0.75)';
+    ctx.beginPath(); ctx.ellipse(-11, 4, 2.8, 1.8, 0, 0, Math.PI * 2); ctx.ellipse(10, 4, 2.8, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5a1f3a';
+    ctx.beginPath(); ctx.arc(-0.5, 4, 5.2, 0.15, Math.PI - 0.15); ctx.closePath(); ctx.fill();
     ctx.restore();
   }
 
@@ -837,6 +882,127 @@
     ctx.restore();
   }
 
+  // ---------- Cape magic ----------
+  function capeShape(t, len, wid) {
+    // a flowing cape attached at (0,0), streaming to the left with a wavy hem
+    ctx.beginPath();
+    ctx.moveTo(4, -wid * 0.35);
+    ctx.quadraticCurveTo(-len * 0.45, -wid * 0.55 + Math.sin(t * 9) * 4, -len, -wid * 0.5 + Math.sin(t * 9 + 1) * 7);
+    for (let i = 0; i <= 4; i++) {
+      const yy = -wid * 0.5 + (wid * i) / 4;
+      ctx.quadraticCurveTo(-len - 10 + Math.sin(t * 11 + i) * 5, yy + wid / 8, -len + Math.sin(t * 9 + i + 1.5) * 7, yy + wid / 4 * (i < 4 ? 1 : 0));
+    }
+    ctx.quadraticCurveTo(-len * 0.45, wid * 0.55 + Math.sin(t * 9 + 2) * 4, 4, wid * 0.35);
+    ctx.closePath();
+  }
+  function paintCape(t, len, wid) {
+    const g = ctx.createLinearGradient(0, 0, -len, 0);
+    g.addColorStop(0, '#9b6bff'); g.addColorStop(1, '#4a2bb8');
+    capeShape(t, len, wid); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.fillStyle = '#ffd34d';
+    [[-len * 0.35, -wid * 0.15, 3], [-len * 0.6, wid * 0.2, 2.4], [-len * 0.8, -wid * 0.25, 2.8], [-len * 0.5, -wid * 0.35, 1.8]].forEach(([sx, sy, r]) => drawStar(sx, sy + Math.sin(t * 9 + sx) * 3, r * 1.6, r * 0.7, 0));
+  }
+  function drawCape(x, y, t, left) {
+    ctx.save();
+    ctx.translate(x - 6, y - 10);
+    ctx.rotate(-0.12 + Math.sin(t * 4) * 0.05);
+    if (left < 1.5 && Math.floor(left * 8) % 2 === 0) ctx.globalAlpha = 0.5;
+    paintCape(t, 92, 54);
+    // gold clasp
+    ctx.fillStyle = '#ffd34d'; ctx.strokeStyle = C.ink; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(4, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  function drawWand(x, y, t, left) {
+    ctx.save();
+    ctx.translate(x + 40, y - 6);
+    ctx.rotate(-0.7 + Math.sin(t * 6) * 0.15);
+    if (left < 1.5 && Math.floor(left * 8) % 2 === 0) ctx.globalAlpha = 0.5;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -38); ctx.stroke();
+    ctx.strokeStyle = '#3b2a7a'; ctx.lineWidth = 4.5; ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, -38); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,230,120,0.4)'; ctx.beginPath(); ctx.arc(0, -46, 16 + Math.sin(t * 10) * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd34d'; ctx.strokeStyle = C.ink; ctx.lineWidth = 2.2;
+    drawStar(0, -46, 12, 5.5, t * 3); ctx.stroke();
+    ctx.restore();
+  }
+  function drawStar(cx, cy, ro, ri, rot) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = rot - Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? ri : ro;
+      i ? ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r) : ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  function drawCapePickup(p) {
+    const y = p.y + Math.sin(p.ph) * 6;
+    ctx.save(); ctx.translate(p.x, y);
+    ctx.fillStyle = 'rgba(180,150,255,0.45)'; ctx.beginPath(); ctx.arc(0, 0, 40 + Math.sin(p.ph * 2) * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(22, -6); ctx.rotate(-0.25); paintCape(p.ph, 46, 34); ctx.restore();
+    ctx.fillStyle = '#ffd34d'; ctx.strokeStyle = C.ink; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(22, -8, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // sparkles around it
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 3; i++) { const a = p.ph * 0.8 + i * 2.1; drawStar(Math.cos(a) * 34, Math.sin(a) * 30, 4, 1.6, a); }
+    ctx.restore();
+  }
+
+  // ---------- Space world (drawn over the normal world while the cape is on) ----------
+  function drawSpace(mix) {
+    ctx.globalAlpha = mix;
+    const g = ctx.createLinearGradient(0, 0, 0, GROUND);
+    g.addColorStop(0, '#120c33'); g.addColorStop(0.6, '#2a1b63'); g.addColorStop(1, '#4b2f8f');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND + 20);
+    // stars
+    const span = 2000;
+    for (const st of stars) {
+      const x = ((st.x - scroll * st.p) % span + span) % span;
+      if (x > W) continue;
+      ctx.globalAlpha = mix * (0.55 + 0.45 * Math.sin(st.ph + scroll * 0.01));
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = mix;
+    // ringed planet
+    const px = W * 0.72, py = 120;
+    ctx.fillStyle = '#ff9fc8';
+    ctx.beginPath(); ctx.arc(px, py, 46, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath(); ctx.ellipse(px - 6, py - 14, 30, 9, -0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.ellipse(px, py, 78, 16, -0.3, 0.15 * Math.PI, 0.95 * Math.PI, true); ctx.stroke();
+    // small moon
+    ctx.fillStyle = '#e8e4ff'; ctx.beginPath(); ctx.arc(W * 0.3, 80, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c9c2f0'; ctx.beginPath(); ctx.arc(W * 0.3 + 5, 76, 4, 0, Math.PI * 2); ctx.arc(W * 0.3 - 6, 86, 3, 0, Math.PI * 2); ctx.fill();
+    // purple lunar hills
+    drawVilli(scroll * 0.18, GROUND - 40, 90, 0.008, '#5b3fa8', mix * 0.9);
+    drawVilli(scroll * 0.4 + 300, GROUND - 6, 60, 0.012, '#7a5cc9', mix);
+    ctx.globalAlpha = 1;
+  }
+  function drawMoonGround(mix) {
+    ctx.globalAlpha = mix;
+    ctx.fillStyle = '#b9b2e3';
+    ctx.fillRect(0, GROUND, W, H - GROUND);
+    // moon-coloured scalloped edge over the normal one
+    const step = 30, off = scroll % step;
+    ctx.beginPath();
+    for (let x = -off - step; x < W + step; x += step) { ctx.moveTo(x + step, GROUND); ctx.arc(x + step / 2, GROUND, step / 2 + 2, Math.PI, 0); }
+    ctx.fill();
+    ctx.strokeStyle = '#9d94d4'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let x = -off - step; x < W + step; x += step) { ctx.moveTo(x - 2, GROUND); ctx.arc(x + step / 2, GROUND, step / 2 + 2, Math.PI, 0); }
+    ctx.stroke();
+    const k0 = Math.floor(scroll / 90);
+    for (let k = k0; k < k0 + W / 90 + 2; k++) {
+      const x = k * 90 - scroll + hash(k) * 30, y = GROUND + 18 + hash(k + 2) * 55, r = 6 + hash(k + 4) * 12;
+      ctx.fillStyle = '#9d94d4'; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#d6d0f5'; ctx.beginPath(); ctx.ellipse(x + 1, y + r * 0.18, r * 0.8, r * 0.2, 0, 0, Math.PI); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function drawYogurt(p) {
     const y = p.y + Math.sin(p.ph) * 6;
     ctx.save(); ctx.translate(p.x, y);
@@ -858,11 +1024,20 @@
     ctx.save();
     if (shake > 0) ctx.translate(rand(-6, 6) * shake * 3, rand(-6, 6) * shake * 3);
     drawBackground(z);
+    if (magicMix > 0.01) drawSpace(magicMix);
     drawGround(z);
+    if (magicMix > 0.01) drawMoonGround(magicMix);
     for (const o of obstacles) drawObstacle(o);
-    for (const p of powerups) (p.type === 'rocket' ? drawRocketPickup : drawYogurt)(p);
+    for (const p of powerups) ({ rocket: drawRocketPickup, cape: drawCapePickup, yogurt: drawYogurt })[p.type](p);
     for (const v of viruses) drawVirus(v);
     drawHidki();
+    for (const b of beams) {
+      ctx.globalAlpha = clamp(b.life / 0.25, 0, 1);
+      ctx.strokeStyle = '#fff6c2'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+      ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2.5; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
 
     for (const p of particles) {
       ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
