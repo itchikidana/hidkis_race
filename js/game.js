@@ -19,6 +19,9 @@
   const START_SPEED = 340;
   const SPEED_GAIN = 460;      // speed approaches START_SPEED + SPEED_GAIN
   const MAX_HEARTS = 3;
+  const FLY_TIME = 7;          // seconds of rocket-peanut flight
+  const FLY_TOP = 110;         // highest Hidki can fly (body centre)
+  const FLY_BOOST = 1.35;      // the world speeds up while the rocket burns
   const PX_PER_METER = 40;
   const ZONE_METERS = 500;
 
@@ -113,6 +116,8 @@
     catch: (n) => { const f = 660 * Math.pow(1.0595, Math.min(n, 14) * 2); tone(f, 0.08, 'triangle', 0.13); tone(f * 1.5, 0.12, 'triangle', 0.1, null, 0.06); },
     gold: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.14, 'triangle', 0.12, null, i * 0.06)),
     hit: () => { tone(240, 0.35, 'sawtooth', 0.09, 70); tone(120, 0.3, 'square', 0.05, 60); },
+    rocket: () => { tone(160, 0.6, 'sawtooth', 0.07, 900); tone(320, 0.5, 'square', 0.04, 1400, 0.05); [784, 988, 1319].forEach((f, i) => tone(f, 0.14, 'triangle', 0.09, null, 0.25 + i * 0.07)); },
+    land: () => tone(500, 0.25, 'triangle', 0.08, 200),
     shield: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sine', 0.1, null, i * 0.05)),
     zone: () => [659, 784, 988].forEach((f, i) => tone(f, 0.18, 'triangle', 0.09, null, i * 0.09)),
     over: () => [523, 440, 349, 262].forEach((f, i) => tone(f, 0.25, 'triangle', 0.1, null, i * 0.16)),
@@ -125,18 +130,18 @@
   let best = store.get('hidki.best', 0);
   let hero, obstacles, viruses, powerups, particles, texts;
   let speed, elapsed, dist, scroll, caught, hearts, combo, comboTimer;
-  let obstGap, virusGap, powerGap, shake, zoneIdx, banner, overTimer;
+  let obstGap, virusGap, powerGap, powerCount, shake, zoneIdx, banner, overTimer;
 
   // Scenery that exists in every state
   const cells = Array.from({ length: 7 }, (_, i) => ({ x: i * 260 + rand(0, 120), y: rand(60, 280), r: rand(40, 95), ph: rand(0, 6) }));
   const bubbles = Array.from({ length: 22 }, () => ({ x: rand(0, 1600), y: rand(0, H), r: rand(3, 10), s: rand(12, 40) }));
 
   function reset() {
-    hero = { y: REST_Y, vy: 0, onGround: true, jumps: 0, holding: false, buffer: 0, limb: 0, sx: 1, sy: 1, invuln: 0, shield: 0, t: 0 };
+    hero = { y: REST_Y, vy: 0, onGround: true, jumps: 0, holding: false, buffer: 0, limb: 0, sx: 1, sy: 1, invuln: 0, shield: 0, fly: 0, boost: 1, t: 0 };
     obstacles = []; viruses = []; powerups = []; particles = []; texts = [];
     speed = START_SPEED; elapsed = 0; dist = 0; caught = 0; hearts = MAX_HEARTS;
     combo = 0; comboTimer = 0; shake = 0; zoneIdx = 0; banner = null; overTimer = 0;
-    obstGap = 700; virusGap = 380; powerGap = START_SPEED * 22;
+    obstGap = 700; virusGap = 380; powerGap = START_SPEED * 14; powerCount = 0;
   }
   reset();
   scroll = 0;
@@ -146,13 +151,14 @@
     if (state === 'title') return start();
     if (state !== 'play') return;
     hero.holding = true;
+    if (hero.fly > 0) return; // while flying, holding = thrust
     if (hero.onGround) jump(false);
     else if (hero.jumps < 2) jump(true);
     else hero.buffer = 0.14;
   }
   function release() {
     hero.holding = false;
-    if (state === 'play' && hero.vy < -200) hero.vy *= JUMP_CUT;
+    if (state === 'play' && hero.fly === 0 && hero.vy < -200) hero.vy *= JUMP_CUT;
   }
   function jump(double) {
     hero.vy = -(double ? DJUMP_V : JUMP_V);
@@ -272,8 +278,13 @@
     viruses.push({ x, y, baseY: y, r: gold ? 15 : 17, ph: rand(0, 6), rot: rand(0, 6), gold: !!gold, kind: Math.floor(rand(0, 3)) });
   }
   function spawnViruses() {
-    const pattern = pick(['line', 'arc', 'single', 'single', 'low']);
     const x0 = W + 60;
+    if (hero.fly > 0) { // a wavy trail of viruses up in the sky
+      const base = rand(170, 300), amp = rand(40, 90), ph = rand(0, 6);
+      for (let i = 0; i < 7; i++) addVirus(x0 + i * 50, base + Math.sin(ph + i * 0.8) * amp, i === 3 && Math.random() < 0.3);
+      return;
+    }
+    const pattern = pick(['line', 'arc', 'single', 'single', 'low']);
     if (pattern === 'line') { const y = rand(250, 330); for (let i = 0; i < 4; i++) addVirus(x0 + i * 52, y); }
     else if (pattern === 'arc') { for (let i = 0; i < 5; i++) addVirus(x0 + i * 52, 300 - Math.sin((i / 4) * Math.PI) * 90); }
     else if (pattern === 'low') { for (let i = 0; i < 3; i++) addVirus(x0 + i * 52, REST_Y - 6); }
@@ -283,7 +294,10 @@
       if (v.x > o.x - 30 && v.x < o.x + o.w + 30 && v.baseY > GROUND - o.h - 34) v.baseY = v.y = GROUND - o.h - 40;
     }
   }
-  function spawnPower() { powerups.push({ x: W + 60, y: rand(250, 320), ph: 0, type: 'yogurt' }); }
+  function spawnPower() {
+    const type = powerCount++ % 2 === 0 ? 'rocket' : 'yogurt';
+    powerups.push({ x: W + 60, y: rand(250, 320), ph: 0, type });
+  }
 
   // ---------- Collision ----------
   function obstacleRects(o) {
@@ -301,13 +315,13 @@
   // ---------- Update ----------
   function update(dt) {
     const playing = state === 'play';
-    const runSpeed = playing ? speed : state === 'title' ? 260 : state === 'over' ? Math.max(0, speed * overTimer) : 0;
+    const runSpeed = playing ? speed * hero.boost : state === 'title' ? 260 : state === 'over' ? Math.max(0, speed * overTimer) : 0;
     if (state === 'paused') return;
 
     if (playing) {
       elapsed += dt;
       speed = START_SPEED + SPEED_GAIN * (1 - Math.exp(-elapsed / 80));
-      dist += speed * dt;
+      dist += speed * hero.boost * dt;
     }
     if (state === 'over') {
       overTimer = Math.max(0, overTimer - dt);
@@ -321,7 +335,26 @@
     // hero
     const h = hero;
     h.t += dt;
-    if (!h.onGround) {
+    if (h.fly > 0 && playing) {
+      // rocket flight: hold to climb, let go to glide down
+      h.fly = Math.max(0, h.fly - dt);
+      h.vy += (h.holding ? -2300 : 900) * dt;
+      h.vy = clamp(h.vy, -460, 380);
+      h.y += h.vy * dt;
+      if (h.y < FLY_TOP) { h.y = FLY_TOP; h.vy = Math.max(0, h.vy); }
+      h.onGround = h.y >= REST_Y;
+      if (h.onGround) { h.y = REST_Y; h.vy = Math.min(0, h.vy); }
+      h.boost += (FLY_BOOST - h.boost) * Math.min(1, dt * 3);
+      if (Math.random() < dt * 60) {
+        const fx = HX - 110, fy = h.y - 2;
+        particles.push({ x: fx, y: fy, vx: rand(-320, -200), vy: rand(-40, 40), life: 0.35, max: 0.35, col: pick(['#ffd34d', '#ff9f43', '#ff6b3d', '#fff1a8']), r: rand(3, 6), nograv: true });
+      }
+      if (h.fly === 0) { // rocket burnt out: fall gently, one air jump left
+        h.onGround = h.y >= REST_Y; h.jumps = 1; h.invuln = Math.max(h.invuln, 1.2); sfx.land();
+        floatText(HX + 20, h.y - 60, 'נגמר הדלק!', '#e2457a');
+        burst(HX - 60, h.y + 10, 14, ['#cfcfcf', '#ffffff', '#ffd34d'], 180, 0.5, 4);
+      }
+    } else if (!h.onGround) {
       h.vy += GRAV * dt * (h.vy > 0 ? 1.15 : 1);
       h.y += h.vy * dt;
       if (h.y >= REST_Y) {
@@ -334,18 +367,19 @@
     h.buffer = Math.max(0, h.buffer - dt);
     h.sx += (1 - h.sx) * Math.min(1, dt * 10);
     h.sy += (1 - h.sy) * Math.min(1, dt * 10);
-    h.limb += dt * (runSpeed / 46) * (h.onGround ? 1 : 1.8); // rolls with the ground
+    h.limb += dt * (runSpeed / 46) * (h.onGround ? 1 : h.fly > 0 ? 2.4 : 1.8); // rolls with the ground
     h.invuln = Math.max(0, h.invuln - dt);
     h.shield = Math.max(0, h.shield - dt);
-    if (playing && h.onGround && Math.random() < dt * 9) particles.push({ x: HX - 10, y: GROUND - 3, vx: -runSpeed * 0.3, vy: rand(-40, -10), life: 0.4, max: 0.4, col: 'rgba(255,255,255,0.8)', r: rand(2, 4) });
+    if (h.fly === 0) h.boost += (1 - h.boost) * Math.min(1, dt * 2);
+    if (playing && h.onGround && h.fly === 0 && Math.random() < dt * 9) particles.push({ x: HX - 10, y: GROUND - 3, vx: -runSpeed * 0.3, vy: rand(-40, -10), life: 0.4, max: 0.4, col: 'rgba(255,255,255,0.8)', r: rand(2, 4) });
 
     // spawning
     if (playing) {
       const sf = (speed - START_SPEED) / SPEED_GAIN;
-      obstGap -= speed * dt;
+      if (h.fly === 0) obstGap -= speed * dt;
       if (obstGap <= 0) { const o = spawnObstacle(); obstGap = speed * rand(0.95, 1.75 - 0.45 * sf) + o.w + 120; }
       virusGap -= speed * dt;
-      if (virusGap <= 0) { spawnViruses(); virusGap = speed * rand(0.9, 1.9); }
+      if (virusGap <= 0) { spawnViruses(); virusGap = h.fly > 0 ? speed * rand(0.9, 1.2) : speed * rand(0.9, 1.9); }
       powerGap -= speed * dt;
       if (powerGap <= 0) { spawnPower(); powerGap = speed * rand(18, 30); }
     }
@@ -380,18 +414,28 @@
       for (const p of powerups) {
         const dx = p.x - HX, dy = p.y - h.y;
         if (dx * dx + dy * dy < (hr + 22) ** 2) {
-          p.dead = true; h.shield = 7; sfx.shield();
-          floatText(p.x, p.y - 26, 'מגן יוגורט!', '#e2457a');
-          burst(p.x, p.y, 18, ['#ffffff', '#ffd1e3', '#bfe9ff'], 240, 0.6, 4);
+          p.dead = true;
+          if (p.type === 'rocket') {
+            h.fly = FLY_TIME; h.onGround = false; h.vy = -520; h.jumps = 2; h.buffer = 0;
+            sfx.rocket(); showBanner('טסים! להחזיק לחוץ כדי לעלות');
+            floatText(p.x, p.y - 30, 'טיל בוטן!', '#d9701f');
+            burst(p.x, p.y, 22, ['#ffd34d', '#ff9f43', '#e2b26b', '#ffffff'], 280, 0.6, 4);
+            obstGap = Math.max(obstGap, speed * 1.4); // a clear landing strip after the flight
+          } else {
+            h.shield = 7; sfx.shield();
+            floatText(p.x, p.y - 26, 'מגן יוגורט!', '#e2457a');
+            burst(p.x, p.y, 18, ['#ffffff', '#ffd1e3', '#bfe9ff'], 240, 0.6, 4);
+          }
         }
       }
       // obstacles
       for (const o of obstacles) {
         if (o.hit) continue;
         if (obstacleRects(o).some((b) => circleRect(HX + 2, h.y + 4, hr, b))) {
-          if (h.shield > 0) {
+          if (h.fly > 0 || h.shield > 0) {
             o.hit = true; o.flyVy = -600; o.spin = 0;
-            h.shield = 0; sfx.hit();
+            if (h.fly === 0) h.shield = 0;
+            sfx.hit();
             burst(HX + 30, h.y, 20, ['#ffffff', '#bfe9ff'], 300, 0.5, 4);
             floatText(HX + 40, h.y - 50, 'בום!', '#2b8be0');
           } else if (h.invuln === 0) {
@@ -412,7 +456,7 @@
     // knocked-away obstacles (shield hits) fly off
     for (const o of obstacles) if (o.flyVy !== undefined) { o.flyVy += GRAV * dt; o.flyY = (o.flyY || 0) + o.flyVy * dt; o.spin += dt * 8; o.x += 300 * dt; }
 
-    for (const p of particles) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 600 * dt; }
+    for (const p of particles) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; if (!p.nograv) p.vy += 600 * dt; }
     particles = particles.filter((p) => p.life > 0);
     for (const t of texts) { t.life -= dt; t.y -= 50 * dt; }
     texts = texts.filter((t) => t.life > 0);
@@ -554,6 +598,14 @@
     ctx.fillStyle = 'rgba(23,48,46,0.18)';
     ctx.beginPath(); ctx.ellipse(x, GROUND + 3, 34 * (1 - lift * 0.5), 7 * (1 - lift * 0.5), 0, 0, Math.PI * 2); ctx.fill();
 
+    if (h.fly > 0) {
+      ctx.save();
+      ctx.translate(x - 62, y + 14);
+      ctx.rotate(clamp(h.vy / 1400, -0.3, 0.3));
+      drawPeanutRocket(h.t, 1.2, true);
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.translate(x, y);
     if (h.invuln > 0 && Math.floor(h.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.4;
@@ -579,6 +631,14 @@
 
     drawFace();
     ctx.restore();
+
+    // rocket fuel gauge above Hidki
+    if (h.fly > 0) {
+      const fw = 64, frac = h.fly / FLY_TIME;
+      const gy = y - 78;
+      rr(x - fw / 2 - 3, gy - 3, fw + 6, 13, 6.5); ctx.fillStyle = 'rgba(31,42,92,0.75)'; ctx.fill();
+      rr(x - fw / 2, gy, Math.max(7, fw * frac), 7, 3.5); ctx.fillStyle = frac < 0.25 ? '#ff5d73' : '#ffc531'; ctx.fill();
+    }
 
     // shield bubble
     if (h.shield > 0) {
@@ -723,6 +783,60 @@
     ctx.restore();
   }
 
+  // A peanut with a little rocket strapped on. Drawn facing right, centred on the peanut.
+  function drawPeanutRocket(t, sc, burning) {
+    ctx.save();
+    ctx.scale(sc, sc);
+    // rocket (on the peanut's back, nose pointing forward)
+    ctx.save();
+    ctx.translate(-6, -15);
+    // flame
+    if (burning) {
+      const fl = 1 + Math.sin(t * 40) * 0.18 + Math.sin(t * 23) * 0.1;
+      ctx.fillStyle = '#ff7a2f';
+      ctx.beginPath(); ctx.moveTo(-29, -6); ctx.quadraticCurveTo(-29 - 26 * fl, -3, -29 - 34 * fl, 0); ctx.quadraticCurveTo(-29 - 26 * fl, 3, -29, 6); ctx.fill();
+      ctx.fillStyle = '#ffd34d';
+      ctx.beginPath(); ctx.moveTo(-29, -3.5); ctx.quadraticCurveTo(-29 - 14 * fl, -2, -29 - 20 * fl, 0); ctx.quadraticCurveTo(-29 - 14 * fl, 2, -29, 3.5); ctx.fill();
+    }
+    ctx.fillStyle = '#ff5d73';
+    ctx.beginPath(); ctx.moveTo(-22, -5); ctx.lineTo(-22, -11); ctx.lineTo(-12, -5); ctx.closePath(); ctx.fill();   // top fin
+    ctx.beginPath(); ctx.moveTo(-22, 5); ctx.lineTo(-22, 11); ctx.lineTo(-12, 5); ctx.closePath(); ctx.fill();      // bottom fin
+    rr(-26, -6, 34, 12, 6); ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#ff5d73'; ctx.beginPath(); ctx.moveTo(8, -6); ctx.quadraticCurveTo(20, -3, 22, 0); ctx.quadraticCurveTo(20, 3, 8, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#5aa9ff'; ctx.beginPath(); ctx.arc(-4, 0, 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9aa6b5'; ctx.fillRect(-29, -4, 4, 8);
+    ctx.restore();
+    // peanut shell: two lobes with a waist
+    ctx.fillStyle = '#e8b974'; ctx.strokeStyle = '#9c6a34'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(-11, 0, 15, 12.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(12, 0, 14, 11.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-11, 0, 15, 12.5, 0, 0.55, Math.PI * 2 - 0.55); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(12, 0, 14, 11.5, 0, Math.PI + 0.6, Math.PI - 0.6); ctx.stroke();
+    // shell dimples
+    ctx.fillStyle = 'rgba(156,106,52,0.35)';
+    [[-18, -5], [-12, 5], [-5, -6], [-20, 4], [16, -6], [8, 5], [19, 3], [10, -4]].forEach(([dx, dy]) => { ctx.beginPath(); ctx.arc(dx, dy, 1.4, 0, Math.PI * 2); ctx.fill(); });
+    // strap holding the rocket
+    ctx.fillStyle = '#5a6cc8'; ctx.fillRect(-3, -14, 5, 22);
+    // happy peanut face
+    ctx.fillStyle = C.ink;
+    ctx.beginPath(); ctx.arc(10, -2, 1.9, 0, Math.PI * 2); ctx.arc(17, -2, 1.9, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(13.5, 2, 3.4, 0.2, Math.PI - 0.2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawRocketPickup(p) {
+    const y = p.y + Math.sin(p.ph) * 6;
+    ctx.save(); ctx.translate(p.x, y);
+    ctx.fillStyle = 'rgba(255,214,120,0.45)'; ctx.beginPath(); ctx.arc(0, -6, 44 + Math.sin(p.ph * 2) * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.rotate(-0.15 + Math.sin(p.ph * 1.3) * 0.08);
+    drawPeanutRocket(p.ph, 1.35, true);
+    ctx.restore();
+  }
+
   function drawYogurt(p) {
     const y = p.y + Math.sin(p.ph) * 6;
     ctx.save(); ctx.translate(p.x, y);
@@ -746,7 +860,7 @@
     drawBackground(z);
     drawGround(z);
     for (const o of obstacles) drawObstacle(o);
-    for (const p of powerups) drawYogurt(p);
+    for (const p of powerups) (p.type === 'rocket' ? drawRocketPickup : drawYogurt)(p);
     for (const v of viruses) drawVirus(v);
     drawHidki();
 
